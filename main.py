@@ -6,6 +6,7 @@ Monitora custos da AWS e gera alertas
 
 import argparse
 import json
+from src.alert_manager import send_sns_alert
 import os
 from datetime import datetime
 from src.cost_analyzer import AWSCostAnalyzer

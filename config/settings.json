@@ -1,0 +1,8 @@
+{
+    "cost_limit_monthly": 100.00,
+    "alert_threshold": 0.8,
+    "currency": "USD",
+    "email_alerts": true,
+    "sns_topic_arn": "arn:aws:sns:us-east-1:650251724133:aws-cost-alerts",
+    "report_format": ["json", "csv"]
+}
