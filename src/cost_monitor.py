@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-class AWSCostAnalyzer:
+class AWSCostMonitor:
     def __init__(self):
         """Inicializa o analisador de custos AWS"""
         self.client = boto3.client('ce')  # Cost Explorer
