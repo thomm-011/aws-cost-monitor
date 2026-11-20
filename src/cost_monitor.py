@@ -29,6 +29,9 @@ class AWSCostMonitor:
             # Hoje
             end_date = datetime.now().strftime('%Y-%m-%d')
             
+        if start_date == end_date:
+            return self._process_cost_data({'ResultsByTime': []}, {'Start': start_date, 'End': end_date})
+
         try:
             response = self.client.get_cost_and_usage(
                 TimePeriod={
@@ -43,7 +46,7 @@ class AWSCostMonitor:
                 }]
             )
             
-            return self._process_cost_data(response)
+            return self._process_cost_data(response, {'Start': start_date, 'End': end_date})
             
         except Exception as e:
             print(f"Erro ao consultar custos: {e}")
@@ -91,47 +94,40 @@ class AWSCostMonitor:
             print(f"Erro ao consultar custos diários: {e}")
             return None
     
-    def _process_cost_data(self, response):
-        """
-        Processa os dados de resposta da API
-        
-        Args:
-            response (dict): Resposta da API Cost Explorer
-            
-        Returns:
-            dict: Dados processados
-        """
-        if not response['ResultsByTime']:
-            return {'total': 0, 'services': []}
-            
-        result = response['ResultsByTime'][0]
-        
-        # Custo total
-        total_cost = float(result['Total']['BlendedCost']['Amount'])
-        
-        # Custos por serviço
-        services = []
-        for group in result['Groups']:
-            service_name = group['Keys'][0]
-            service_cost = float(group['Metrics']['BlendedCost']['Amount'])
-            
-            if service_cost > 0:  # Apenas serviços com custo
-                services.append({
-                    'name': service_name,
-                    'cost': service_cost,
-                    'percentage': (service_cost / total_cost * 100) if total_cost > 0 else 0
-                })
-        
-        # Ordena por custo (maior primeiro)
-        services.sort(key=lambda x: x['cost'], reverse=True)
-        
-        return {
-            'total': total_cost,
-            'currency': self.currency,
-            'services': services,
-            'period': result['TimePeriod']
-        }
-    
+    def _process_cost_data(self, response, period=None):
+        """Normalize totals and grouped service costs without requiring Total in grouped responses."""
+        results = response.get('ResultsByTime', [])
+        service_costs = {}
+        total = Decimal('0')
+        currency = self.currency
+        for result in results:
+            groups = result.get('Groups', [])
+            grouped_total = Decimal('0')
+            for group in groups:
+                metric = group.get('Metrics', {}).get('BlendedCost', {})
+                amount = Decimal(metric.get('Amount', '0'))
+                currency = metric.get('Unit', currency)
+                grouped_total += amount
+                name = group['Keys'][0]
+                service_costs[name] = service_costs.get(name, Decimal('0')) + amount
+            metric = result.get('Total', {}).get('BlendedCost')
+            if metric is not None:
+                total += Decimal(metric['Amount'])
+                currency = metric.get('Unit', currency)
+            else:
+                total += grouped_total
+        services = [
+            {'name': name, 'cost': float(cost),
+             'percentage': float(cost / total * 100) if total else 0.0}
+            for name, cost in service_costs.items() if cost != 0
+        ]
+        services.sort(key=lambda item: item['cost'], reverse=True)
+        if results:
+            period = {'Start': results[0]['TimePeriod']['Start'],
+                      'End': results[-1]['TimePeriod']['End']}
+        return {'total': float(total), 'currency': currency, 'services': services,
+                'period': period or {'Start': '', 'End': ''}}
+
     def compare_with_previous_month(self):
         """
         Compara custos do mês atual com o anterior
@@ -150,12 +146,9 @@ class AWSCostMonitor:
         else:
             previous_start = current_start.replace(month=current_start.month - 1)
             
-        # Último dia do mês anterior
-        if previous_start.month == 12:
-            previous_end = previous_start.replace(year=previous_start.year + 1, month=1, day=1) - timedelta(days=1)
-        else:
-            previous_end = previous_start.replace(month=previous_start.month + 1, day=1) - timedelta(days=1)
-        
+        # Cost Explorer uses an exclusive end date: the first day of this month.
+        previous_end = current_start
+
         # Buscar custos
         current_costs = self.get_monthly_costs(
             current_start.strftime('%Y-%m-%d'),
@@ -193,7 +186,7 @@ class AWSCostMonitor:
         Returns:
             dict: Status do limite
         """
-        if not current_cost:
+        if current_cost is None:
             current_data = self.get_monthly_costs()
             if not current_data:
                 return None

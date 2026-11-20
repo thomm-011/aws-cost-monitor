@@ -9,7 +9,7 @@ import json
 from src.alert_manager import send_sns_alert
 import os
 from datetime import datetime
-from src.cost_analyzer import AWSCostAnalyzer
+from src.cost_monitor import AWSCostMonitor
 
 def load_config():
     """Carrega configurações do arquivo JSON"""
@@ -58,7 +58,7 @@ def print_cost_report(cost_data, config):
     print(f"📅 Período: {cost_data['period']['Start']} até {cost_data['period']['End']}")
     
     # Verificar limite
-    analyzer = AWSCostAnalyzer()
+    analyzer = AWSCostMonitor()
     limit_check = analyzer.check_cost_limit(config['cost_limit_monthly'], total)
     
     if limit_check:
@@ -144,7 +144,7 @@ def main():
     config = load_config()
     
     # Inicializar analisador
-    analyzer = AWSCostAnalyzer()
+    analyzer = AWSCostMonitor()
     
     try:
         if args.days:
@@ -176,7 +176,7 @@ def main():
             cost_data = analyzer.get_monthly_costs()
             
             if cost_data:
-                limit_check = analyzer.check_cost_limit(config['cost_limit_monthly'])
+                limit_check = analyzer.check_cost_limit(config['cost_limit_monthly'], cost_data['total'])
                 if limit_check:
                     print(f"Status: {limit_check['status']}")
                     if limit_check['percentage_used'] >= config['alert_threshold'] * 100:
